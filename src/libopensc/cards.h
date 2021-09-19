@@ -296,6 +296,9 @@ enum {
 
 	/* Bit4id Digital-DNA (NXP ChipDoc, Italian CNS/eID) */
 	SC_CARD_TYPE_CHIPDOC_IT = 46000,
+	/* DKCCOS cards */
+	SC_CARD_TYPE_DKCCOS = 47000,
+	SC_CARD_TYPE_DKCCOS_V6_0,
 };
 
 extern sc_card_driver_t *sc_get_default_driver(void);
@@ -344,6 +347,7 @@ extern sc_card_driver_t *sc_get_dtrust_driver(void);
 extern sc_card_driver_t *sc_get_lteid_driver(void);
 extern sc_card_driver_t *sc_get_srbeid_driver(void);
 extern sc_card_driver_t *sc_get_cedulauy_driver(void);
+extern sc_card_driver_t *sc_get_dkccos_driver(void);
 
 #ifdef __cplusplus
 }
