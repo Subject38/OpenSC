@@ -29,6 +29,7 @@ extern "C" {
 #include <libopensc/types.h>
 #include <libopensc/pkcs15.h>
 
+int sc_pkcs15emu_dkccos_init_ex(sc_pkcs15_card_t *, struct sc_aid *);
 int sc_pkcs15emu_openpgp_init_ex(sc_pkcs15_card_t *,	struct sc_aid *);
 int sc_pkcs15emu_starcert_init_ex(sc_pkcs15_card_t *,	struct sc_aid *);
 int sc_pkcs15emu_tcos_init_ex(sc_pkcs15_card_t *,	struct sc_aid *);

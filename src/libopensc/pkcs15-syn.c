@@ -36,6 +36,7 @@
 
 // clang-format off
 struct sc_pkcs15_emulator_handler builtin_emulators[] = {
+	{ "dkccos", sc_pkcs15emu_dkccos_init_ex },
 	{ "openpgp",	sc_pkcs15emu_openpgp_init_ex	},
 	{ "starcert",	sc_pkcs15emu_starcert_init_ex	},
 	{ "tcos",	sc_pkcs15emu_tcos_init_ex	},
@@ -89,6 +90,7 @@ static const char *exfunc_name  = "sc_pkcs15_init_func_ex";
 int sc_pkcs15_is_emulation_only(sc_card_t *card)
 {
 	switch (card->type) {
+		case SC_CARD_TYPE_DKCCOS_V6_0:
 		case SC_CARD_TYPE_GEMSAFEV1_PTEID:
 		case SC_CARD_TYPE_OPENPGP_V1:
 		case SC_CARD_TYPE_OPENPGP_V2:

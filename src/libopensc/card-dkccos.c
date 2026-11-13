@@ -59,8 +59,6 @@ enum dkccos_file_structure {
 };
 
 #define DKCCOS_PIN_MAX_LENGTH   20
-#define DKCCOS_PIN_ID_SO        1
-#define DKCCOS_PIN_ID_USER      2
 
 enum dkccos_cipher {
     DKCCOS_CIPHER_DES_ECB = 0,
@@ -169,7 +167,8 @@ static int dkccos_init(sc_card_t *card)
     card->caps |= SC_CARD_CAP_RNG;
 
     /* add RSA */
-    flags = SC_ALGORITHM_ONBOARD_KEY_GEN | SC_ALGORITHM_RSA_PAD_NONE | SC_ALGORITHM_RSA_PAD_PKCS1 | SC_ALGORITHM_RSA_HASH_NONE;
+    /* Advertise the native PKCS#1 mode verified on DKCCOS 6.0 tokens. */
+    flags = SC_ALGORITHM_ONBOARD_KEY_GEN | SC_ALGORITHM_RSA_PAD_PKCS1 | SC_ALGORITHM_RSA_HASH_NONE;
     _sc_card_add_rsa_alg(card, 512,  flags, 0x10001);
     _sc_card_add_rsa_alg(card, 768,  flags, 0x10001);
     _sc_card_add_rsa_alg(card, 1024, flags, 0x10001);
@@ -356,7 +355,7 @@ static void dkccos_pin_init(sc_card_t *card, struct sc_pin_cmd_data *data)
     dkccos_pin_init_pin(card, &data->pin2, 2);
 }
 
-static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data, int *tries_left)
+static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
 {
     int r = 0;
     struct sc_apdu apdu;
@@ -383,7 +382,7 @@ static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data, int *tr
         break;
     }
 
-    r = iso_ops->pin_cmd(card, data, tries_left);
+    r = iso_ops->pin_cmd(card, data);
     LOG_TEST_RET(card->ctx, r, "pin command failed");
 
     return r;
@@ -408,7 +407,7 @@ static int dkccos_set_security_env(sc_card_t *card, const sc_security_env_t *env
 {
     struct dkccos_private_data *priv = card->drv_data;
 
-    if (priv->sec_env_num && se_num != priv->sec_env_num)
+    if (priv->sec_env_num >= 0 && se_num != priv->sec_env_num)
         LOG_TEST_RET(card->ctx, SC_ERROR_NOT_SUPPORTED, "multiple security environments are not supported");
 
     switch (env->operation) {
@@ -456,6 +455,7 @@ static int dkccos_do_crypto(sc_card_t *card, unsigned op, const u8 *in, size_t i
     sc_apdu_t apdu;
     enum dkccos_cipher cipher;
     unsigned char buf[SC_MAX_APDU_BUFFER_SIZE];
+    size_t trailer_len = op == DKCCOS_INS_DECRYPT ? 4 : 0;
     struct dkccos_private_data *priv = card->drv_data;
 
     if (priv->sec_env_num < 0)
@@ -479,17 +479,26 @@ static int dkccos_do_crypto(sc_card_t *card, unsigned op, const u8 *in, size_t i
 
     r = dkccos_do_format_path(card, &buf[0], 4, &priv->sec_env.file_ref);
     LOG_TEST_RET(card->ctx, r, "file ID does not fit in command buffer");
+    if (inlen > sizeof(buf) - 6 - trailer_len)
+        LOG_FUNC_RETURN(card->ctx, SC_ERROR_BUFFER_TOO_SMALL);
     buf[4] = inlen >> 8;
     buf[5] = inlen & 0xff;
     memcpy(buf + 6, in, inlen);
+    if (trailer_len) {
+        /* Output path 3F00/0000 returns the plaintext in the response APDU. */
+        memcpy(buf + 6 + inlen, "\x3f\x00\x00\x00", 4);
+    }
     apdu.data = buf;
-    apdu.datalen = apdu.lc = inlen + 6;
+    apdu.datalen = apdu.lc = inlen + 6 + trailer_len;
     apdu.resp = out;
-    apdu.resplen = apdu.le = outlen;
+    apdu.resplen = outlen;
+    apdu.le = MIN(outlen, sc_get_max_recv_size(card));
 
     r = sc_transmit_apdu(card, &apdu);
     LOG_TEST_RET(card->ctx, r, "APDU transmit failed");
-    return sc_check_sw(card, apdu.sw1, apdu.sw2);
+    r = sc_check_sw(card, apdu.sw1, apdu.sw2);
+    LOG_TEST_RET(card->ctx, r, "cryptographic operation failed");
+    return (int) apdu.resplen;
 }
 
 static int dkccos_decipher(sc_card_t *card, const u8 *crgram, size_t crgram_len, u8 *out, size_t outlen)
