@@ -355,6 +355,8 @@ static void dkccos_pin_init(sc_card_t *card, struct sc_pin_cmd_data *data)
     dkccos_pin_init_pin(card, &data->pin2, 2);
 }
 
+static int dkccos_logout(sc_card_t *card);
+
 static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
 {
     int r = 0;
@@ -383,6 +385,15 @@ static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
     }
 
     r = iso_ops->pin_cmd(card, data);
+    if (data->cmd == SC_PIN_CMD_VERIFY && r == SC_ERROR_NOT_ALLOWED &&
+            apdu.sw1 == 0x69 && apdu.sw2 == 0x85) {
+        /* PKCS#11 software logout leaves the card authenticated. DKCCOS
+         * refuses another VERIFY until that hardware session is ended. */
+        r = dkccos_logout(card);
+        if (r == SC_SUCCESS)
+            r = iso_ops->pin_cmd(card, data);
+    }
+    data->apdu = NULL;
     LOG_TEST_RET(card->ctx, r, "pin command failed");
 
     return r;
@@ -398,6 +409,7 @@ static int dkccos_logout(sc_card_t *card)
     LOG_TEST_RET(card->ctx, r, "APDU transmit failed");
     r = sc_check_sw(card, apdu.sw1, apdu.sw2);
     LOG_TEST_RET(card->ctx, r, "LOGOUT failed");
+    ((struct dkccos_private_data *)card->drv_data)->sec_env_num = -1;
 
     return r;
 }
