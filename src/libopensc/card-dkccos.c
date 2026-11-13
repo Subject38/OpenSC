@@ -40,6 +40,7 @@ enum dkccos_instruction {
     DKCCOS_INS_FORMAT = 0x4A,
     DKCCOS_INS_GET_CHALLENGE = 0x4C,
     DKCCOS_INS_GENERATE_KEYS = 0x4E,
+    DKCCOS_INS_GET_STATUS = 0x50,
     DKCCOS_INS_DECRYPT = 0x54,
     DKCCOS_INS_SIGN = 0x5A,
     DKCCOS_INS_RESET = 0x86,
@@ -357,6 +358,26 @@ static void dkccos_pin_init(sc_card_t *card, struct sc_pin_cmd_data *data)
 
 static int dkccos_logout(sc_card_t *card);
 
+/* DKCCOS 6.0 GET STATUS: byte 0 is 1 when idle and 2 for user authentication. */
+static int dkccos_user_auth_state(sc_card_t *card)
+{
+    sc_apdu_t apdu;
+    u8 buf[256];
+    int r;
+
+    sc_format_apdu(card, &apdu, SC_APDU_CASE_2_SHORT, DKCCOS_INS_GET_STATUS, 0, 0);
+    apdu.resp = buf;
+    apdu.resplen = sizeof(buf);
+    apdu.le = sizeof(buf);
+    r = sc_transmit_apdu(card, &apdu);
+    LOG_TEST_RET(card->ctx, r, "GET STATUS transmit failed");
+    r = sc_check_sw(card, apdu.sw1, apdu.sw2);
+    LOG_TEST_RET(card->ctx, r, "GET STATUS failed");
+    if (apdu.resplen != 56 || (buf[0] != 1 && buf[0] != 2))
+        LOG_FUNC_RETURN(card->ctx, SC_ERROR_UNKNOWN_DATA_RECEIVED);
+    return buf[0];
+}
+
 static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
 {
     int r = 0;
@@ -365,6 +386,22 @@ static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
 
     if (data->pin_type != SC_AC_CHV)
         LOG_TEST_RET(card->ctx, SC_ERROR_NOT_SUPPORTED, "unsupported PIN type");
+
+    if ((data->cmd == SC_PIN_CMD_VERIFY || data->cmd == SC_PIN_CMD_GET_INFO) &&
+            data->pin_reference == 1) {
+        r = dkccos_user_auth_state(card);
+        LOG_TEST_RET(card->ctx, r, "reading user authentication state failed");
+        if (data->cmd == SC_PIN_CMD_GET_INFO) {
+            data->pin1.tries_left = -1; /* GET STATUS does not provide a retry count. */
+            data->pin1.logged_in = r == 2 ? SC_PIN_STATE_LOGGED_IN : SC_PIN_STATE_LOGGED_OUT;
+            return SC_SUCCESS;
+        }
+        if (r == 2) {
+            /* PKCS#11 software logout leaves the hardware session active. */
+            r = dkccos_logout(card);
+            LOG_TEST_RET(card->ctx, r, "ending previous user session failed");
+        }
+    }
 
     dkccos_pin_init(card, data);
     r = iso7816_build_pin_apdu(card, &apdu, data, sbuf, sizeof(sbuf));
@@ -385,14 +422,6 @@ static int dkccos_pin_cmd(sc_card_t *card, struct sc_pin_cmd_data *data)
     }
 
     r = iso_ops->pin_cmd(card, data);
-    if (data->cmd == SC_PIN_CMD_VERIFY && r == SC_ERROR_NOT_ALLOWED &&
-            apdu.sw1 == 0x69 && apdu.sw2 == 0x85) {
-        /* PKCS#11 software logout leaves the card authenticated. DKCCOS
-         * refuses another VERIFY until that hardware session is ended. */
-        r = dkccos_logout(card);
-        if (r == SC_SUCCESS)
-            r = iso_ops->pin_cmd(card, data);
-    }
     data->apdu = NULL;
     LOG_TEST_RET(card->ctx, r, "pin command failed");
 
