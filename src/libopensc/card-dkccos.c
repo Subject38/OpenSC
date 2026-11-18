@@ -698,9 +698,13 @@ static int dkccos_list_files(sc_card_t *card, u8 *buf, size_t buflen)
         return r;
     size = r;
 
-    while (idx < size && buflen) {
-        r = sc_read_binary(card, idx, rbuf, sizeof(rbuf), 0);
+    while (idx < size && buflen >= 2) {
+        /* The offset is an entry number, so a short reply completes the read. */
+        r = iso_ops->read_binary(card, idx, rbuf,
+                                MIN(sizeof(rbuf), sc_get_max_recv_size(card)), NULL);
         LOG_TEST_RET(card->ctx, r, "failed to read directory entry");
+        if (r < 4)
+            LOG_FUNC_RETURN(card->ctx, SC_ERROR_UNKNOWN_DATA_RECEIVED);
 
         *buf++ = rbuf[2];
         *buf++ = rbuf[3];

@@ -192,11 +192,23 @@ static int dk_certificate(sc_pkcs15_card_t *p15card, const struct dk_attrs *attr
 	info.path = *path;
 	info.path.index = (int)value->offset;
 	info.path.count = (int)value->length;
+	/* The object scan already read the complete certificate attribute. */
+	info.value.value = malloc(value->length);
+	if (!info.value.value)
+		return SC_ERROR_OUT_OF_MEMORY;
+	memcpy(info.value.value, value->value, value->length);
+	info.value.len = value->length;
 	r = sc_pkcs15_read_certificate(p15card, &info, 0, &cert);
-	if (r < 0)
+	if (r < 0) {
+		free(info.value.value);
 		return r;
+	}
 	r = sc_pkcs15emu_add_x509_cert(p15card, &obj, &info);
-	if (r < 0 || !cert->key || cert->key->algorithm != SC_ALGORITHM_RSA)
+	if (r < 0) {
+		free(info.value.value);
+		goto done;
+	}
+	if (!cert->key || cert->key->algorithm != SC_ALGORITHM_RSA)
 		goto done;
 	pubinfo.id = info.id;
 	pubinfo.modulus_length = cert->key->u.rsa.modulus.len * 8;
