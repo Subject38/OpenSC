@@ -165,7 +165,7 @@ static int dkccos_init(sc_card_t *card)
     card->drv_data = priv;
 
     card->cla = 0x00;
-    card->caps |= SC_CARD_CAP_RNG;
+    card->caps |= SC_CARD_CAP_RNG | SC_CARD_CAP_NO_PIN_STATUS_FLAGS;
 
     /* add RSA */
     /* Advertise the native PKCS#1 mode verified on DKCCOS 6.0 tokens. */

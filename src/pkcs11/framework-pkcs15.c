@@ -536,7 +536,8 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 	sc_log(context,
 		"C_GetTokenInfo() auth. object %p, token-info flags 0x%lX", auth,
 		slot->token_info.flags);
-	if (auth) {
+	/* Some cards only report the current login state, which is not token info. */
+	if (auth && !(slot->p11card->card->caps & SC_CARD_CAP_NO_PIN_STATUS_FLAGS)) {
 		struct sc_pkcs15_card *p15card = NULL;
 		struct sc_pkcs15_auth_info *pin_info = NULL;
 

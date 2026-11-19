@@ -573,6 +573,9 @@ struct sc_reader_operations {
 /* Card (or card driver) supports key unwrapping operations */
 #define SC_CARD_CAP_UNWRAP_KEY			0x00001000
 
+/* PIN GET INFO does not report retry counters or a required PIN change. */
+#define SC_CARD_CAP_NO_PIN_STATUS_FLAGS		0x00002000
+
 typedef struct sc_card {
 	struct sc_context *ctx;
 	struct sc_reader *reader;
